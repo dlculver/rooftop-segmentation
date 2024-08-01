@@ -21,13 +21,20 @@ from torchvision.transforms import functional as F
 # helper functions
 def open_image(path, mode=None):
     """
-    opens image from directory
+    Opens image from directory.
+
+    Parameters:
+    - path: (str or Path) Path to the image file.
+    - mode: (str) Mode to convert the image, e.g. "RGB" or "L". 
+
+    Returns:
+    - img: PIL Image object
     """
     img = Image.open(path, mode="r")
     img.load()
     if (
         mode and img.mode != mode
-    ):  # in case we need to make something in gray scale for exmaple
+    ):  # Convert image mode if necessary (e.g. change to gray scale).
         img = img.convert(mode)
     return img
 
@@ -37,15 +44,17 @@ class RoofDataSet(Dataset):
     Organizes Dida dataset into a Dataset class
 
     Parameters:
-        data_dir : (str) directory which contains the dataset
-        mode : (str) can be 'train', 'val', or 'test'. Defaults to 'train'
-        normalize : (bool) determines whether we normalize image tensors
-        transform : (bool) determines if we perform data augmentaiton
-        resize : determines if we allow for resizing of images
+        - data_dir : (str) directory which contains the dataset
+        - mode : (str) can be 'train', 'val', or 'test'. Defaults to 'train'
+        - normalize : (bool) determines whether we normalize image tensors
+        - transform : (bool) determines if we perform data augmentaiton
+        - resize : determines if we allow for resizing of images
+        - binary_mask (bool) if True, convert labels to binary masks
     """
 
-    img_mean = [0.485, 0.456, 0.406]  # from pretrained MobileNet
-    img_std = [0.229, 0.224, 0.225]  # from pretrained MobileNet
+    # Precomputed ImageNet normalization statistics for normalization purposes.
+    img_mean = [0.485, 0.456, 0.406]  
+    img_std = [0.229, 0.224, 0.225] 
 
     def __init__(
         self,
@@ -125,12 +134,12 @@ class RoofDataSet(Dataset):
         return img
 
 
-# we need to allow for data augmentation, transforms must apply synchronously to bouth image and label
-
+# Below are classes to allow for data augmentation. 
+# The following classes allow for randomly transforming and image and label SYNCHRONOUSLY. The built-in torchvision transforms don't do this.
 
 class RandomSubset:
     """
-    Class to apply a random subset of our transforms to the images
+    Class to apply a random choice of subset of our transforms to the images and their labels.
     """
 
     def __init__(self, transforms: list):
@@ -139,7 +148,7 @@ class RandomSubset:
     def get_rand_subset(self):
         # randomly draw how many transforms to select
         num = np.random.randint(0, len(self.transforms))
-        # draw which transforms to use
+        # randomly draw which transforms to use
         subset = np.random.choice(self.transforms, num, replace=False)
         return subset
 
@@ -214,6 +223,7 @@ class RandomSimultaneousResizeCrop:
                 j = np.random.randint(0, image.size[0] - w)
                 return i, j, h, w
 
+        # If a suitable crop box is not found, fallback to using a center-crop image. 
         w = min(image.size[0], image.size[1])
         i = (image.size[1] - w) // 2
         j = (image.size[0] - w) // 2
@@ -241,10 +251,12 @@ class RandomSimultaneousRotation:
                     "If degree_range is a single number it must be positive."
                 )
             self.degree_range = (-degree_range, degree_range)
-        else:
+        elif isinstance(degree_range, list):
             if len(degree_range) != 2:
                 raise ValueError("If degree_range is a list, it must have length 2.")
             self.degree_range = degree_range
+        else:
+            raise ValueError("The variable degree_range must be a integer or a list of integers")
 
         self.resample = resample
         self.expand = expand
