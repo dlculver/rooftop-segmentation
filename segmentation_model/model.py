@@ -3,19 +3,84 @@ We define a U-Net model with backbone a pre-trained MobileNet model
 """
 
 import torch
-from torch import nn  # pylint: disable=import-error
-
+from torch import nn
+from torch.nn import functional as F
 from torchvision.models import mobilenet_v2
-
 from torchvision.models.feature_extraction import create_feature_extractor
 
-# pylint: disable=invalid-name
-# pylint: disable=no-member
+from tqdm import tqdm
 
 
-import torch
-import torch.nn as nn
+def train_model(
+        model, 
+        device, 
+        train_loader, 
+        val_loader, 
+        criterion, 
+        optimizer,
+        scheduler, 
+        num_epochs):
+    
+    train_losses, val_losses = [], []
 
+    model.to(device)
+
+    for epoch in tqdm(range(num_epochs), ):
+
+        model.train()
+        running_loss = 0.
+        
+        for batch_idx, (images, labels) in enumerate(train_loader):
+            images, labels = images.to(device), labels.to(device)
+            
+            # zero the parameter gradients
+            optimizer.zero_grad()
+
+            # forward pass
+            outputs = model(images)
+
+             # Crop the model's output to match the size of the labels (256x256)
+            labels = F.interpolate(labels, size=outputs.size()[2:], mode='nearest') # more methodical way of making label and outputs same size
+
+            # Compute the loss
+            loss = criterion(outputs, labels)
+
+            # Backpropagation and optimizer step
+            loss.backward()
+            optimizer.step()
+
+            # update running loss
+            running_loss += loss.item() * images.size(0)
+
+        # calculate average loss over the epoch
+        average_train_loss = running_loss / len(train_loader)
+        train_losses.append(average_train_loss)
+
+        # evaluation on validation set
+        model.eval()
+        running_val_loss = 0.
+
+        with torch.no_grad():
+            for image, label in val_loader:
+                image, label = image.to(device), label.to(device)
+                output = model(image)
+                
+                label = F.interpolate(label, size=output.size()[2:], mode='nearest')
+
+                loss = criterion(output, label)
+
+                running_val_loss += loss.item()
+
+                # step scheduler
+                if scheduler is not None:
+                    scheduler.step()   
+
+        average_val_loss = running_val_loss / len(val_loader)
+        val_losses.append(average_val_loss)
+
+        print(f"Epoch [{epoch + 1}/{num_epochs}] Average Train Loss: {average_train_loss:.4f}, Average Val Loss: {average_val_loss:.4f}")
+
+    return model, train_losses, val_losses                
 
 class UpBlock(nn.Module):
     """
@@ -40,6 +105,7 @@ class UpBlock(nn.Module):
         kernel_size=3,
         stride=2,
         padding=1,
+        dropout_rate: float = None,
         mode="bilinear",
     ):
         super().__init__()
@@ -52,12 +118,15 @@ class UpBlock(nn.Module):
         )
         self.batchnorm = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout_rate) if dropout_rate else None
 
     def forward(self, input_):
         x = self.upsample(input_)
         x = self.conv(x)
         x = self.batchnorm(x)
         output = self.relu(x)
+        if self.dropout is not None:
+            output = self.dropout(output)
         return output
 
 
@@ -72,7 +141,7 @@ class UNetMobileNet(nn.Module):
         nn.Module class instance
     """
 
-    def __init__(self, output_channels):
+    def __init__(self, output_channels, dropout_rate = None):
         super().__init__()
         base_model = mobilenet_v2(pretrained=True)
 
@@ -99,10 +168,10 @@ class UNetMobileNet(nn.Module):
 
         self.up_stack = nn.ModuleList(
             [
-                UpBlock(320, 512),
-                UpBlock(512 + 576, 256),
-                UpBlock(192 + 256, 128),
-                UpBlock(144 + 128, 64),
+                UpBlock(320, 512, dropout_rate=dropout_rate),
+                UpBlock(512 + 576, 256, dropout_rate=dropout_rate),
+                UpBlock(192 + 256, 128, dropout_rate=dropout_rate),
+                UpBlock(144 + 128, 64, dropout_rate=dropout_rate),
             ]
         )
 
@@ -131,3 +200,5 @@ class UNetMobileNet(nn.Module):
         out = torch.sigmoid(out)
 
         return out
+    
+

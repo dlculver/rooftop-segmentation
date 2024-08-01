@@ -95,7 +95,7 @@ def display_duo(image, prediction):
 
 
 def show_predictions(
-    dataset: RoofDataSet, model, binary_pred=False, batch_size=1, max_num=3
+    dataset: RoofDataSet, model, device, binary_pred=False, batch_size=1, max_num=3
 ):
     """
     utility to display the original image, label, and prediction
@@ -111,7 +111,8 @@ def show_predictions(
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # Set the model to evaluation mode
+    # Set the model to the device and to evaluation mode
+    model.to(device)
     model.eval()
 
     nb_shown = 0
@@ -125,6 +126,7 @@ def show_predictions(
                 labels,
             ) = batch  # have shape (batch_size, 3, 256, 256) and (batch_size, 1, 256, 256)
 
+            images, labels = images.to(device), labels.to(device)
             if nb_shown == max_num:
                 break
             # Assuming your model returns the prediction as a tensor
@@ -148,6 +150,7 @@ def show_predictions(
     if mode == "test":
         for batch in dataloader:
             images = batch  # images shape: (bs, 3, 256, 256)
+            images = images.to(device)
 
             if nb_shown == max_num:
                 break
