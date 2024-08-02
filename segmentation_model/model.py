@@ -71,10 +71,6 @@ def train_model(
 
                 running_val_loss += loss.item()
 
-                # step scheduler
-                if scheduler is not None:
-                    scheduler.step()   
-
         average_val_loss = running_val_loss / len(val_loader)
         val_losses.append(average_val_loss)
 
